@@ -94,13 +94,27 @@ namespace eosio {
 
         eosio_assert( price.amount >= 0 && cpu.amount > 0 && net.amount > 0 && duration > 0 , "ensure input positive number" );
 
-        _plan.emplace(_self, [&]( auto& p ){
-            p.id = _plan.available_primary_key();
-            p.price = price;
-            p.cpu = cpu;
-            p.net = net;
-            p.duration = duration;
-        });
+        auto plan_index_by_price = _plan.get_index<N(price)>();
+        const auto plan = plan_index_by_price.find(price.amount);
+
+        if( plan == plan_index_by_price.end() ){
+            _plan.emplace(_self, [&]( auto& p ){
+                p.id = _plan.available_primary_key();
+                p.price = price;
+                p.cpu = cpu;
+                p.net = net;
+                p.duration = duration;
+            });
+        } else {
+            auto pl = _plan.find(plan->id);
+            _plan.modify(pl, 0, [&]( auto& p ){
+                p.price = price;
+                p.cpu = cpu;
+                p.net = net;
+                p.duration = duration;
+            });
+        }
+        
 
     }
 
@@ -127,53 +141,49 @@ namespace eosio {
         account_name beneficiary;
         beneficiary = memo != ""?string_to_name(memo.c_str()):from;
 
-        bool assert_judge = false;
+        auto plan_index_by_price = _plan.get_index<N(price)>();
+        auto plan = plan_index_by_price.find(quantity.amount);
 
-        for( auto itr = _plan.begin(); itr != _plan.end(); itr++ ){
-            if( itr->price.amount == quantity.amount ){
-                assert_judge = true;
+        eosio_assert( plan != plan_index_by_price.end() , "invalid price");
 
-                auto active_size = get_active_size();
+        auto active_size = get_active_size();
 
-                eosio_assert( active_size !=0 , "active stake account is zero, maybe you can try it next time");
+        eosio_assert( active_size !=0 , "active stake account is zero, maybe you can try it next time");
 
-                auto num = ( now()/86400 ) % active_size;
-                auto low = _creditor.get_index<N(isactive)>().lower_bound(1);
-                auto stake_itr = get_index_iterator(low, num);
+        auto num = ( now()/86400 ) % active_size;
+        auto low = _creditor.get_index<N(isactive)>().lower_bound(1);
+        auto stake_plan = get_index_iterator(low, num);
 
-                //delegatebw
-                INLINE_ACTION_SENDER(eosiosystem::system_contract, delegatebw)( N(eosio), { stake_itr->account, N(active)}
-                    ,{ stake_itr->account, beneficiary, itr->net, itr->cpu, false });
+        //delegatebw
+        INLINE_ACTION_SENDER(eosiosystem::system_contract, delegatebw)( N(eosio), { stake_plan->account, N(active)}
+            ,{ stake_plan->account, beneficiary, plan->net, plan->cpu, false });
 
-                //save order
-                uint64_t order_id;
-                _order.emplace(_self, [&](auto& o){
-                    o.id = _order.available_primary_key();
-                    o.buyer = from;
-                    o.price = quantity;
-                    o.creditor = stake_itr->account;
-                    o.beneficiary = beneficiary;
-                    o.plan_id = itr->id;
-                    o.cpu_staked = itr->cpu;
-                    o.net_staked = itr->net;
-                    o.expire_at = now() + itr->duration;
+        //save order
+        uint64_t order_id;
+        _order.emplace(_self, [&](auto& o){
+            o.id = _order.available_primary_key();
+            o.buyer = from;
+            o.price = quantity;
+            o.creditor = stake_plan->account;
+            o.beneficiary = beneficiary;
+            o.plan_id = plan->id;
+            o.cpu_staked = plan->cpu;
+            o.net_staked = plan->net;
+            o.expire_at = now() + plan->duration;
 
-                    order_id = o.id;
-                });
+            order_id = o.id;
+        });
 
-                //deferred undelegatebw
-                auto _global = _global_config.get();
-                eosio::transaction out;
-                out.actions.emplace_back( permission_level{ stake_itr->account, N(active) }, _self, N(undelegatebw)
-                    , std::make_tuple(order_id) );
-                out.delay_sec = itr->duration;
-                out.send(_global.sender_id, _self, false);
-                _global.sender_id++;
-                _global_config.set(_global, _self);
-                break;
-            }
-        }
-        eosio_assert(assert_judge, "invalid price");
+        //deferred undelegatebw
+        auto _global = _global_config.get();
+        eosio::transaction out;
+        out.actions.emplace_back( permission_level{ stake_plan->account, N(active) }, _self, N(undelegatebw)
+            , std::make_tuple(order_id) );
+        out.delay_sec = plan->duration;
+        out.send(_global.sender_id, _self, false);
+        _global.sender_id++;
+        _global_config.set(_global, _self);
+
     }
 
     void bankofstake::forfree(account_name owner){

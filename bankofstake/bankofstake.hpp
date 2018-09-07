@@ -89,6 +89,7 @@ namespace eosio{
                 uint64_t    updated_at;
 
                 uint64_t primary_key()const { return id; }
+                uint64_t get_price()const { return price.amount; }
             };
 
             //@abi table
@@ -108,10 +109,12 @@ namespace eosio{
             };
 
             typedef eosio::singleton<N(global), global_config> global_configs;
-            typedef eosio::multi_index<N(plan), plan> plans;
             typedef eosio::multi_index<N(order), order,
                 indexed_by< N(buyer), const_mem_fun<order, uint64_t, &order::get_buyer> >
                 > orders;
+            typedef eosio::multi_index<N(plan), plan,
+                indexed_by< N(price), const_mem_fun<plan, uint64_t, &plan::get_price> >
+                > plans;
             typedef eosio::multi_index<N(creditor), creditor,
                 indexed_by< N(isactive), const_mem_fun<creditor, uint64_t, &creditor::get_is_active> >
                 > creditors;  
