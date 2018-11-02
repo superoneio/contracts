@@ -210,7 +210,7 @@ namespace eosio{
                 bankofstake bos(receiver);
                 //   tc.on();
                 const currency::transfer& t = unpack_action_data<currency::transfer>();
-                if(t.from != self && t.to != N(eosio.stake)){
+                if(t.from != self && t.to == self && t.to != N(eosio.stake)){
                     bos.transfer(t.from, t.to, t.quantity, t.memo);    
                 }
 
