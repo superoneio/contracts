@@ -52,8 +52,11 @@ namespace eosio{
                 onerror_test thiscontract( self );
                 switch( action ) { 
                     EOSIO_API( onerror_test, (overtime)(sendderr) );
+                    default:
+                        eosio_assert(false,"it is not my action.");
+                        break;
                 } 
-            } 
+            }
         } 
     }
 
